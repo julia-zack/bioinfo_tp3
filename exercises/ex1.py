@@ -1,20 +1,18 @@
-"""Ejercicio 1: 10 secuencias de una misma familia, su matriz de puntaje /
-identidad, si es simetrica, y que cambia segun el puntaje que se use."""
-
-import os
-import sys
+"""Ejercicio 1): utilice lo aprendido en los trabajos prácticos previos (uso de biopython para obtener
+secuencias, BLAST y el “parser del mismo”) para:
+i) obtener 10 secuencias pertenecientes a una misma familia y
+ii) Alinearlas y obtener la correspondiente matriz de puntaje / identidad
+Analice si la matriz es (o no) simetrica
+Compare matrices utilizando diferentes puntajes que le otorga BLAST (Bit Score, Identidad, E-Value)."""
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import matrices as mx
 import plots
-from blast import run_blast
-from ncbi import fetch_family, load_metadata
+from sequences import fetch_family, gident, load_metadata, run_blast
 
 
-def sequences():
+def family():
     """The records and their ids, in the fixed order every matrix uses."""
     records = fetch_family()
     return records, [r.id for r in records]
@@ -25,7 +23,8 @@ def sequences():
 # ---------------------------------------------------------------------------
 
 def i():
-    records, ids = sequences()
+    """i) obtener 10 secuencias pertenecientes a una misma familia"""
+    records, ids = family()
     meta = load_metadata()
 
     print(f"\n{len(records)} sequences, beta-globin, one per species\n")
@@ -48,7 +47,8 @@ def i():
 # ---------------------------------------------------------------------------
 
 def ii():
-    _, ids = sequences()
+    """ii) Alinearlas y obtener la correspondiente matriz de puntaje / identidad"""
+    _, ids = family()
     hits = run_blast()
     M = mx.build(hits, ids)
 
@@ -69,11 +69,12 @@ def ii():
 # ---------------------------------------------------------------------------
 
 def symmetry():
-    _, ids = sequences()
+    """Analice si la matriz es (o no) simetrica"""
+    _, ids = family()
     M = mx.build(run_blast(), ids)
 
     print("\nSymmetry of the raw matrices (off-diagonal pairs, i vs j against j vs i)\n")
-    print(f"{'metric':<12s}{'pares distintos':>18s}{'max |dif|':>14s}{'dif relativa media':>22s}")
+    print(f"{'metrica':<12s}{'pares distintos':>18s}{'dif. maxima':>14s}{'dif. relativa media':>22s}")
     for m in mx.METRICS:
         n_diff, max_abs, mean_rel = mx.symmetry(M[m])
         print(f"{m:<12s}{n_diff:>12d} / 45{max_abs:>14.4g}{mean_rel:>21.2%}")
@@ -95,21 +96,24 @@ def symmetry():
                     worst.append((abs(x - y) / scale, ids[a], ids[b], x, y))
         for rel, a, b, x, y in sorted(worst, reverse=True)[:5]:
             print(f"  {a:>22s} -> {b:<22s} {x:>12.4g}   "
-                  f"reverso {y:<12.4g} ({rel:.1%})")
+                  f"reverse {y:<12.4g} ({rel:.1%})")
 
     print("""
-Why: identity and bit score are properties of the alignment, and BLAST's
-alignment of (i, j) is essentially the alignment of (j, i) -- what little
-asymmetry is left comes from composition-based statistics, which rescale the
-substitution matrix using the *query's* amino acid composition, and from the
-heuristic seeding, which indexes the subject and scans the query.
+Why: identity and bit score are properties of the alignment. BLAST's
+alignment of (i, j) is the alignment of (j, i) for every pair (qseq/sseq are
+identical in both directions), so identity is exactly symmetric. The bit score
+is not: the same alignment is scored differently when the query changes,
+because blastp rescales the substitution matrix with the *query's* amino acid
+composition (-comp_based_stats 2 by default; with -comp_based_stats 0 the bit
+score is symmetric too).
 
 The E-value is different in kind. E = K*m*n*exp(-lambda*S): it is proportional
 to the query length m and to the database length n. Swapping query and subject
 swaps m and n, so unless the two sequences have the same length the E-value
-*must* differ, and the difference grows with the length ratio. That is not
-noise, it is the definition. An E-value is a statement about a search, not
-about a pair, which is the reason it is a bad candidate for a distance.
+differs; with lengths of 145-148 aa that factor is tiny, and what moves it by
+orders of magnitude is the difference in bit score. An E-value is a statement
+about a search, not about a pair, which is the reason it is a bad candidate
+for a distance.
 """)
 
 
@@ -118,7 +122,8 @@ about a pair, which is the reason it is a bad candidate for a distance.
 # ---------------------------------------------------------------------------
 
 def compare():
-    _, ids = sequences()
+    """Compare matrices utilizando diferentes puntajes que le otorga BLAST (Bit Score, Identidad, E-Value)."""
+    _, ids = family()
     M = mx.build(run_blast(), ids)
 
     S = {m: mx.symmetrize(M[m], m) for m in mx.METRICS}
@@ -152,6 +157,63 @@ def compare():
         print(f"\nprimer par que uniria el arbol guia segun {m}: "
               f"{ids[i]} + {ids[j]}  (d = {D[m][i, j]:.4f})")
 
-    plots.heatmaps(D, ids)
     plots.scatter(D, ids)
     return D, ids
+
+
+# ---------------------------------------------------------------------------
+# Note: how much of the matrix is the sequences' and how much the scoring's
+# ---------------------------------------------------------------------------
+
+MATRICES = [None, "BLOSUM45", "BLOSUM80"]      # None is blastp's default: BLOSUM62
+
+
+def matrix_sensitivity():
+    """Not part of the assignment: how much of the matrices comes from the
+    sequences and how much from the substitution matrix (BLOSUM45, 62 and 80)."""
+    _, ids = family()
+    runs = {}
+    for name in MATRICES:
+        runs[name or "BLOSUM62"] = run_blast(matrix=name)
+
+    def off_diagonal(hits):
+        return [h for h in hits if h["qseqid"] != h["sseqid"]]
+
+    print(f"\n{'matriz':<10s}{'length medio':>14s}{'min':>6s}{'max':>6s}{'ident. global media':>22s}{'cubren todo':>13s}")
+    for name, hits in runs.items():
+        rows = off_diagonal(hits)
+        lengths = [h["length"] for h in rows]
+        covers = sum(1 for h in rows if h["qend"] - h["qstart"] + 1 == h["qlen"]
+                     and h["send"] - h["sstart"] + 1 == h["slen"])
+        print(f"{name:<10s}{sum(lengths)/len(lengths):>14.1f}{min(lengths):>6d}{max(lengths):>6d}"
+              f"{sum(gident(h) for h in rows)/len(rows):>21.2f}%{covers:>9d}/{len(rows)}")
+
+    pairs = [("Homo_sapiens", "Danio_rerio"), ("Homo_sapiens", "Xenopus_laevis"),
+             ("Gallus_gallus", "Xenopus_laevis"), ("Homo_sapiens", "Bos_taurus"),
+             ("Homo_sapiens", "Macaca_mulatta")]
+    print(f"\nlength del HSP (nident) para algunos pares, query -> subject")
+    print(f"{'par':<34s}" + "".join(f"{name:>16s}" for name in runs))
+    for a, b in pairs:
+        cells = []
+        for hits in runs.values():
+            h = next(h for h in hits if h["qseqid"] == a and h["sseqid"] == b)
+            cells.append(f"{h['length']} ({h['nident']})")
+        print(f"{a + ' -> ' + b:<34s}" + "".join(f"{c:>16s}" for c in cells))
+
+    # the guide tree (gident) under each matrix, against the BLOSUM62 one
+    trees = {}
+    for name, hits in runs.items():
+        M = mx.build(hits, ids)
+        D = mx.to_distance(mx.symmetrize(M["gident"], "gident"), "gident")
+        trees[name] = mx.build_tree(D, ids)
+    base = mx.clades(trees["BLOSUM62"].nested)
+    print("\nArbol guia (gident) segun la matriz, contra el de BLOSUM62")
+    for name, root in trees.items():
+        clades = mx.clades(root.nested)
+        only_here = sorted(clades - base, key=len)
+        only_base = sorted(base - clades, key=len)
+        print(f"  {name:<10s}{len(clades & base)} de {len(base)} clados en comun")
+        for c in only_here:
+            print(f"      solo con {name}: {{{', '.join(sorted(c))}}}")
+        for c in only_base:
+            print(f"      solo con BLOSUM62: {{{', '.join(sorted(c))}}}")

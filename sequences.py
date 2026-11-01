@@ -1,11 +1,14 @@
-"""Everything that talks to NCBI: fetching the protein family the whole TP
-works with, plus the local cache so the same records are not downloaded twice.
+"""The sequences of the TP: fetching the protein family from NCBI (with a local
+cache so the same records are not downloaded twice) and the all-vs-all BLAST
+of the family against itself.
+
+Part 1, NCBI:
 
 The family is beta-globin, one entry per species, and the ten entries are
 named explicitly below rather than searched for. Two reasons for that choice
-over "the top hit of a query per species", which is what this module used to
-do and which quietly downloaded haptoglobin for the rabbit and a transcription
-factor for the mouse:
+over "the top hit of a query per species", which can quietly return a protein
+that only mentions hemoglobin in its annotation (a haptoglobin, a
+transcription factor):
 
   - the family is paralogous. Mouse alone has five reviewed beta-like globins
     (beta-1, beta-2, beta-H0, beta-H1, epsilon-Y2), rat and Xenopus and
@@ -27,12 +30,13 @@ in the report:
       &format=tsv
 
 The species tree these ten are meant to recover, for exercise 2, is
-(((((human, chimp), macaque), ((mouse, rat), rabbit)), cow), chicken, frog,
-fish) -- primates and rodents as tight clades, fish at the root.
+(((((((human, chimp), macaque), ((mouse, rat), rabbit)), cow), chicken), frog),
+fish).
 """
 
 import os
 import json
+import subprocess
 
 from Bio import Entrez, SeqIO
 from Bio.Seq import Seq
@@ -63,11 +67,10 @@ FAMILY = [
     ("Danio rerio",           "Q90486", "HBB1_DANRE", "beta-A1, adult; over beta-A2"),
 ]
 
-# A globin is ~146 residues. The guard is not paranoia: the previous version
-# of this module returned entries of 373, 347 and 969 aa and nothing noticed
-# until the BLAST output looked strange. Anything outside this range means
-# the accession is not what it is supposed to be, and that should stop the
-# run rather than flow into a distance matrix.
+# A globin is ~146 residues. Anything outside this range means the accession
+# is not what it is supposed to be (a haptoglobin is 347 aa, a transcription
+# factor 373), and that should stop the run rather than flow silently into a
+# distance matrix.
 MIN_LEN, MAX_LEN = 120, 200
 
 
@@ -158,3 +161,108 @@ def load_metadata():
     familia'."""
     with open(META_CACHE) as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Part 2, BLAST
+#
+# The all-vs-all comparison: runs blastp of the family against itself and
+# parses the result into one row per ordered pair.
+#
+# Needs BLAST+ installed and on the PATH (`brew install blast` on macOS,
+# `apt install ncbi-blast+` on Debian/Ubuntu). Check with `blastp -version`.
+# ---------------------------------------------------------------------------
+
+
+
+HITS_CACHE = os.path.join(DATA_DIR, 'blast_hits.json')
+
+# The columns asked of `-outfmt 6`, in order. qlen/slen and nident are not in
+# the default set and are the ones that make the identity question answerable:
+# see gident() below.
+FIELDS = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+          "qstart", "qend", "sstart", "send", "evalue", "bitscore",
+          "nident", "qlen", "slen", "qseq", "sseq"]
+
+INT_FIELDS = {"length", "mismatch", "gapopen", "qstart", "qend",
+              "sstart", "send", "nident", "qlen", "slen"}
+FLOAT_FIELDS = {"pident", "evalue", "bitscore"}
+
+
+def run_blast(fasta=FASTA_CACHE, force=False, matrix=None):
+    """Every ordered pair (i, j) that BLAST can align, as a list of dicts.
+
+    One `-subject` run rather than makeblastdb + one query at a time: with a
+    query file of 10 and a subject file of the same 10, BLAST does all 100
+    ordered comparisons in a single call, self-hits included. Keeping the
+    self-hits is deliberate, they are the diagonal the bit score has to be
+    normalised against (a bit score of 200 means nothing until you know the
+    sequence scores 210 against itself).
+
+    Two flags that change the answer:
+
+    -evalue 10000  the default cutoff is 10, which quietly drops the most
+                   distant pairs. A missing pair is not "distance infinity",
+                   it is a hole in the matrix, and the clustering of exercise
+                   2 has to invent a number to fill it. Raising the cutoff
+                   moves that invention from the code to BLAST's statistics.
+
+    -max_hsps 1    without it a pair with two local alignments contributes two
+                   rows and the parser has to decide which one is "the"
+                   comparison. One HSP per pair, the best one, is the same
+                   convention the pairwise identity of a phylogeny assumes.
+
+    `matrix` is the substitution matrix. None is blastp's default (BLOSUM62)
+    and the cache every other exercise reads; any other name gets its own
+    cache, so comparing matrices never overwrites the main run.
+    """
+    cache = HITS_CACHE if matrix is None else HITS_CACHE.replace(".json", f"_{matrix.lower()}.json")
+    if os.path.exists(cache) and not force:
+        print(f"Using cached BLAST hits from {cache}")
+        with open(cache) as f:
+            return json.load(f)
+
+    cmd = [
+        "blastp",
+        "-query", fasta,
+        "-subject", fasta,
+        "-outfmt", "6 " + " ".join(FIELDS),
+        "-evalue", "10000",
+        "-max_hsps", "1",
+    ]
+    if matrix is not None:
+        cmd += ["-matrix", matrix]
+    print("$ " + " ".join(cmd))
+    out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+
+    hits = [parse_row(line) for line in out.strip().split("\n") if line]
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(cache, "w") as f:
+        json.dump(hits, f, indent=2)
+    print(f"{len(hits)} ordered pairs aligned")
+    return hits
+
+
+def parse_row(line):
+    row = dict(zip(FIELDS, line.split("\t")))
+    for k in INT_FIELDS:
+        row[k] = int(row[k])
+    for k in FLOAT_FIELDS:
+        row[k] = float(row[k])
+    return row
+
+
+def gident(row):
+    """Identity over the shorter sequence, not over the aligned region.
+
+    BLAST's own `pident` is nident/length, where length is the length of the
+    HSP. It answers "of the part that aligned, how much matched?", which is
+    the wrong question for a distance: two sequences sharing one conserved
+    30-residue motif and nothing else report pident 95 and land next to each
+    other in the tree. Dividing by the shorter sequence instead folds coverage
+    back in, so a partial alignment cannot buy a short distance.
+
+    Both numbers are built into matrices, precisely so the report can show
+    what the difference does to the tree.
+    """
+    return 100.0 * row["nident"] / min(row["qlen"], row["slen"])

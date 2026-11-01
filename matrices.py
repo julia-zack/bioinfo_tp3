@@ -13,10 +13,10 @@ import math
 
 import numpy as np
 
-from blast import gident
+from sequences import gident
 
 # The metrics carried all the way through: BLAST's identity, the coverage
-# corrected identity of blast.gident, the bit score and the E-value.
+# corrected identity of sequences.gident, the bit score and the E-value.
 METRICS = ["pident", "gident", "bitscore", "evalue"]
 
 LABELS = {
@@ -29,6 +29,14 @@ LABELS = {
 # What an absent pair means, per metric. BLAST reporting no hit is not the
 # same as BLAST reporting a bad one, and the difference has to be recorded
 # somewhere rather than silently becoming a zero.
+# The same metrics, named for figure titles.
+NAMES = {
+    "pident":   "BLAST identity (% over the HSP)",
+    "gident":   "Global identity (% over the shorter sequence)",
+    "bitscore": "Bit score",
+    "evalue":   "E-value",
+}
+
 MISSING = {"pident": 0.0, "gident": 0.0, "bitscore": 0.0, "evalue": np.inf}
 
 
@@ -126,9 +134,11 @@ def to_distance(S, metric):
     Each metric needs its own conversion, and getting this wrong is the
     quietest way to end up with a beautiful, backwards tree:
 
-    identity   d = 1 - id. The textbook p-distance. It saturates: past ~75%
-               divergence every pair looks equally far, which is why real
-               phylogenetics applies a Poisson or Kimura correction on top.
+    identity   d = 1 - id. The textbook p-distance. It saturates: near the
+               divergence of two random sequences (~95% for 20 amino acids;
+               the usual 75% is the DNA value) every pair looks equally far,
+               which is why real phylogenetics applies a Poisson or Kimura
+               correction on top.
 
     bit score  not a similarity in [0, 1] at all, it grows with length, so a
                long pair of distant sequences can outscore a short pair of
@@ -140,9 +150,8 @@ def to_distance(S, metric):
                be rescaled into [0, 1], but the result is not a distance in
                any useful sense: it depends on the size of the database, so
                the same two sequences change distance when a sequence is added
-               to the set, and it floors at 0.0 for anything close, collapsing
-               all the near pairs onto the same value. The scaling below makes
-               the matrix comparable to the others; the report should say it
+               to the set, and it tends to 0.0 for anything very close.
+               The scaling below makes the matrix comparable to the others; the report should say it
                is a ranking, not a metric.
     """
     n = S.shape[0]
@@ -240,3 +249,109 @@ def show(M, ids, title, fmt="{:8.3f}", half=False):
             else:
                 cells.append(fmt.format(M[i, j]).rjust(9))
         print(f"{name:<{width}s} " + "".join(cells))
+
+
+# ---------------------------------------------------------------------------
+# From the distance matrix to the guide tree
+#
+# From the distance matrix to the guide tree: the procedure of the assignment.
+#
+# Repeatedly:
+#   i)  find the two closest elements and join them in a node;
+#   ii) recompute the distance from the "other" elements to the new node as the
+#       average of their distances to its two children, and look for the closest
+#       pair again.
+#
+# The two cases the assignment distinguishes -- option a) the two closest are
+# loose elements, option b) they are an element and an existing node -- need no
+# separate branches in the code: an existing node IS an element of the new
+# matrix, so "find the closest pair" covers both.
+# ---------------------------------------------------------------------------
+
+
+
+class Cluster:
+    """An element of the matrix: first a sequence, later a node.
+
+    `height` is the node's height, half the distance at which its two
+    children were joined. Leaves are at height 0.
+    """
+
+    def __init__(self, newick, height=0.0, leaves=None, children=None):
+        self.newick = newick
+        self.height = height
+        self.leaves = leaves or {newick}
+        # A leaf is the name of the sequence; a node is the tuple of its two
+        # children. It is the same tree as the Newick one, but walkable:
+        # exercise 3 needs it to know in which order to merge.
+        self.nested = children if children is not None else newick
+
+
+def newick(D, ids):
+    """The guide tree in Newick format, from a symmetric matrix."""
+    return build_tree(D, ids).newick + ";"
+
+
+def build_tree(D, ids):
+    """The root node of the guide tree: `.newick` to draw it, `.nested` to
+    walk it (leaves = names, nodes = (child_a, child_b))."""
+    n = len(ids)
+    active = list(range(n))
+    clusters = {i: Cluster(ids[i]) for i in range(n)}
+    dist = {frozenset((i, j)): float(D[i][j])
+            for i in range(n) for j in range(i + 1, n)}
+    next_id = n
+
+    while len(active) > 1:
+        # i) the closest pair. Ties are broken by name so that two runs on the
+        # same matrix give the same tree: with identical sequences (human and
+        # chimp) the distance is 0 and the tie is real.
+        pair = min(
+            (frozenset((a, b)) for k, a in enumerate(active) for b in active[k + 1:]),
+            key=lambda p: (dist[p], sorted(n for k in p for n in clusters[k].leaves)),
+        )
+        a, b = sorted(pair, key=lambda x: sorted(clusters[x].leaves))
+        height = dist[pair] / 2
+
+        # The branch to each child is what is missing from the child's height
+        # up to the parent's. Averaging never gives a distance below the pair
+        # just merged, so heights only grow; the max(..., 0) is a safeguard.
+        la = max(height - clusters[a].height, 0.0)
+        lb = max(height - clusters[b].height, 0.0)
+
+        clusters[next_id] = Cluster(
+            newick=f"({clusters[a].newick}:{la:.4f},{clusters[b].newick}:{lb:.4f})",
+            height=height,
+            leaves=clusters[a].leaves | clusters[b].leaves,
+            children=(clusters[a].nested, clusters[b].nested),
+        )
+
+        # ii) recompute the distance from the new node to the rest.
+        active.remove(a)
+        active.remove(b)
+        for other in active:
+            dist[frozenset((next_id, other))] = (
+                dist[frozenset((a, other))] + dist[frozenset((b, other))]) / 2
+        active.append(next_id)
+        next_id += 1
+
+    return clusters[active[0]]
+
+
+def clades(nested):
+    """The set of clades (each one a frozenset of leaves) of a nested tree.
+
+    This is what two trees are compared by: the order of the two children of
+    a node carries no information.
+    """
+    found = set()
+
+    def leaves(node):
+        if isinstance(node, str):
+            return frozenset([node])
+        below = leaves(node[0]) | leaves(node[1])
+        found.add(below)
+        return below
+
+    leaves(nested)
+    return found
