@@ -7,4 +7,4 @@ momento de la entrega.
 figuras adentro. También está el mismo texto en `informe.md`, que es la fuente del pdf.
 El mismo pdf explica como correr el codigo luego de clonar el repo.
 
-git clone https://github.com/zingmanariel/bioinfo_tp3.git tp3
+git clone https://github.com/julia-zack/bioinfo_tp3.git tp3
