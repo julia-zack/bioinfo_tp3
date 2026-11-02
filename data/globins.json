@@ -1,0 +1,82 @@
+{
+  "Homo_sapiens": {
+    "species": "Homo sapiens",
+    "accession": "P68871",
+    "entry_name": "HBB_HUMAN",
+    "chosen_because": "single adult beta",
+    "description": "sp|P68871.2|HBB_HUMAN RecName: Full=Hemoglobin subunit beta; AltName: Full=Beta-globin; AltName: Full=Hemoglobin beta chain; Contains: RecName: Full=LVV-hemorphin-7; Contains: RecName: Full=Spinorphin",
+    "length": 147
+  },
+  "Pan_troglodytes": {
+    "species": "Pan troglodytes",
+    "accession": "P68873",
+    "entry_name": "HBB_PANTR",
+    "chosen_because": "single adult beta",
+    "description": "sp|P68873.2|HBB_PANTR RecName: Full=Hemoglobin subunit beta; AltName: Full=Beta-globin; AltName: Full=Hemoglobin beta chain",
+    "length": 147
+  },
+  "Macaca_mulatta": {
+    "species": "Macaca mulatta",
+    "accession": "P02026",
+    "entry_name": "HBB_MACMU",
+    "chosen_because": "single adult beta",
+    "description": "sp|P02026.1|HBB_MACMU RecName: Full=Hemoglobin subunit beta; AltName: Full=Beta-globin; AltName: Full=Hemoglobin beta chain",
+    "length": 146
+  },
+  "Mus_musculus": {
+    "species": "Mus musculus",
+    "accession": "P02088",
+    "entry_name": "HBB1_MOUSE",
+    "chosen_because": "beta-major, adult; over beta-2/H0/H1/epsilon-Y2",
+    "description": "sp|P02088.2|HBB1_MOUSE RecName: Full=Hemoglobin subunit beta-1; AltName: Full=Beta-1-globin; AltName: Full=Hemoglobin beta-1 chain; AltName: Full=Hemoglobin beta-major chain",
+    "length": 147
+  },
+  "Rattus_norvegicus": {
+    "species": "Rattus norvegicus",
+    "accession": "P02091",
+    "entry_name": "HBB1_RAT",
+    "chosen_because": "major-form, adult; over beta-2 minor",
+    "description": "sp|P02091.3|HBB1_RAT RecName: Full=Hemoglobin subunit beta-1; AltName: Full=Beta-1-globin; AltName: Full=Hemoglobin beta chain, major-form; AltName: Full=Hemoglobin beta-1 chain",
+    "length": 147
+  },
+  "Oryctolagus_cuniculus": {
+    "species": "Oryctolagus cuniculus",
+    "accession": "P02057",
+    "entry_name": "HBB_RABIT",
+    "chosen_because": "beta-1/2, the only reviewed adult beta",
+    "description": "sp|P02057.2|HBB_RABIT RecName: Full=Hemoglobin subunit beta-1/2; AltName: Full=Beta-1/2-globin; AltName: Full=Hemoglobin beta-1/2 chain",
+    "length": 147
+  },
+  "Bos_taurus": {
+    "species": "Bos taurus",
+    "accession": "P02070",
+    "entry_name": "HBB_BOVIN",
+    "chosen_because": "single adult beta",
+    "description": "sp|P02070.1|HBB_BOVIN RecName: Full=Hemoglobin subunit beta; AltName: Full=Beta-globin; AltName: Full=Hemoglobin beta chain; Contains: RecName: Full=Spinorphin",
+    "length": 145
+  },
+  "Gallus_gallus": {
+    "species": "Gallus gallus",
+    "accession": "P02112",
+    "entry_name": "HBB_CHICK",
+    "chosen_because": "adult beta; over the embryonic rho/epsilon",
+    "description": "sp|P02112.2|HBB_CHICK RecName: Full=Hemoglobin subunit beta; AltName: Full=Beta-globin; AltName: Full=Hemoglobin beta chain",
+    "length": 147
+  },
+  "Xenopus_laevis": {
+    "species": "Xenopus laevis",
+    "accession": "P02132",
+    "entry_name": "HBB1_XENLA",
+    "chosen_because": "beta-major, adult; over beta-2 and the larval chain",
+    "description": "sp|P02132.2|HBB1_XENLA RecName: Full=Hemoglobin subunit beta-1; AltName: Full=Beta-1-globin; AltName: Full=Hemoglobin beta-1 chain; AltName: Full=Hemoglobin beta-major chain",
+    "length": 146
+  },
+  "Danio_rerio": {
+    "species": "Danio rerio",
+    "accession": "Q90486",
+    "entry_name": "HBB1_DANRE",
+    "chosen_because": "beta-A1, adult; over beta-A2",
+    "description": "sp|Q90486.3|HBB1_DANRE RecName: Full=Hemoglobin subunit beta-1; AltName: Full=Beta-1-globin; AltName: Full=Beta-A1-globin; AltName: Full=Hemoglobin beta-1 chain",
+    "length": 148
+  }
+}
